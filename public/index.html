@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SMAM2 · Gestione amministrativa sartoria</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-wrap">
+        <img src="/assets/mw-logo.jpg" alt="MW SRL" class="brand-logo">
+        <div><div class="brand-title">SMAM2</div><div class="brand-sub">Amministrazione sartoria</div></div>
+      </div>
+      <nav id="nav" class="nav">
+        <button data-page="dashboard" class="active">Dashboard</button>
+        <button data-page="student-sheet">Scheda allievo</button>
+        <button data-page="students">Allievi</button>
+        <button data-page="work-detail">Dettaglio lavorazioni</button>
+        <button data-page="tariffs">Tariffario</button>
+        <button data-page="expenses">Spese</button>
+        <button data-page="employees">Dipendenti</button>
+        <button data-page="reports">Report</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="pill">Paga sarte: € 9,00/ora</div>
+        <a href="/logout">Esci</a>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div><div class="eyebrow">MW SRL</div><h1 id="pageTitle">Dashboard</h1></div>
+        <div id="topActions"></div>
+      </header>
+      <section id="view" class="view"><div class="loading">Caricamento…</div></section>
+    </main>
+  </div>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
