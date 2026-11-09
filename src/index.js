@@ -246,7 +246,10 @@ async function handleApi(req, env, url) {
     const gd=await globalDiscount(env), rows=await workRows(env,{studentId:id});
     const totals={gross:0,discount:0,net:0,vat:0,total:0,qty:0};
     for(const r of rows){const c=calcLine(r.taxable_amount_cents,r.quantity,gd,r.vat_percent);Object.assign(r,{unit_net_4:c.unitNet4,gross_cents:c.grossCents,discount_cents:c.discountCents,net_cents:c.netCents,vat_cents:c.vatCents,total_cents:c.totalCents});totals.gross+=c.grossCents;totals.discount+=c.discountCents;totals.net+=c.netCents;totals.vat+=c.vatCents;totals.total+=c.totalCents;totals.qty+=int(r.quantity)}
-    return json({student:s,work:rows,totals,globalDiscountPercent:gd});
+    const tariffs=(await env.DB.prepare('SELECT * FROM repair_tariffs WHERE active=1 ORDER BY garment_type,repair_code').all()).results;
+    const qtyByTariff={};
+    for(const r of rows) qtyByTariff[r.tariff_id]=(qtyByTariff[r.tariff_id]||0)+int(r.quantity);
+    return json({student:s,work:rows,tariffs,qtyByTariff,totals,globalDiscountPercent:gd});
   }
   if (m && req.method === 'POST') {
     const studentId=int(m[1]), b=await req.json(), tariffId=int(b.tariffId), q=Math.max(0,int(b.quantity));
@@ -254,6 +257,37 @@ async function handleApi(req, env, url) {
     const r=await env.DB.prepare(`INSERT INTO student_work_items(student_id,tariff_id,work_date,quantity,notes) VALUES(?,?,?,?,?)`).bind(studentId,tariffId,clean(b.workDate)||todayISO(),q,clean(b.notes)).run();
     return json({ok:true,id:r.meta.last_row_id});
   }
+  m = path.match(/^\/api\/students\/(\d+)\/work-bulk$/);
+  if (m && req.method === 'PUT') {
+    const studentId=int(m[1]), b=await req.json(), items=Array.isArray(b.items)?b.items:[];
+    const student=await env.DB.prepare('SELECT id FROM students WHERE id=?').bind(studentId).first();
+    if(!student)return json({error:'Allievo non trovato'},404);
+    const desired=new Map();
+    for(const x of items){const tariffId=int(x.tariffId),quantity=Math.max(0,int(x.quantity));if(tariffId)desired.set(tariffId,quantity)}
+    const existing=(await env.DB.prepare(`SELECT id,tariff_id,quantity FROM student_work_items WHERE student_id=? ORDER BY work_date DESC,id DESC`).bind(studentId).all()).results;
+    const byTariff=new Map();
+    for(const r of existing){if(!byTariff.has(r.tariff_id))byTariff.set(r.tariff_id,[]);byTariff.get(r.tariff_id).push(r)}
+    const tariffIds=new Set([...desired.keys()]);
+    const statements=[];
+    for(const tariffId of tariffIds){
+      const rows=byTariff.get(tariffId)||[];
+      const current=rows.reduce((a,r)=>a+int(r.quantity),0), target=desired.get(tariffId)||0;
+      if(target>current){
+        statements.push(env.DB.prepare(`INSERT INTO student_work_items(student_id,tariff_id,work_date,quantity,notes) VALUES(?,?,?,?,?)`).bind(studentId,tariffId,clean(b.workDate)||todayISO(),target-current,''));
+      } else if(target<current){
+        let remove=current-target;
+        for(const r of rows){
+          if(remove<=0)break;
+          const q=int(r.quantity);
+          if(q<=remove){statements.push(env.DB.prepare('DELETE FROM student_work_items WHERE id=?').bind(r.id));remove-=q}
+          else {statements.push(env.DB.prepare('UPDATE student_work_items SET quantity=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(q-remove,r.id));remove=0}
+        }
+      }
+    }
+    if(statements.length)await env.DB.batch(statements);
+    return json({ok:true,changes:statements.length});
+  }
+
   m = path.match(/^\/api\/work\/(\d+)$/);
   if (m && req.method === 'PUT') {
     const b=await req.json();
@@ -271,12 +305,14 @@ async function handleApi(req, env, url) {
 
   // EXPENSES (manuali + personale automatico)
   if (req.method === 'GET' && path === '/api/expenses') {
-    const {from,to}=range(url);
+    const {from,to}=range(url), category=clean(url.searchParams.get('category')), search=clean(url.searchParams.get('search')).toLowerCase();
     const manual=(await env.DB.prepare(`SELECT id,expense_date,description,category,supplier,taxable_amount_cents,vat_percent,notes,0 automatic FROM expenses WHERE expense_date BETWEEN ? AND ?`).bind(from,to).all()).results;
     const labor=(await env.DB.prepare(`SELECT h.id,h.work_date expense_date,('Personale · '||e.last_name||' '||e.first_name) description,'Personale' category,'' supplier,(h.minutes*e.hourly_rate_cents/60) taxable_amount_cents,0 vat_percent,h.notes,1 automatic FROM employee_hours h JOIN employees e ON e.id=h.employee_id WHERE h.work_date BETWEEN ? AND ?`).bind(from,to).all()).results;
-    const rows=[...manual,...labor].sort((a,b)=>b.expense_date.localeCompare(a.expense_date)||Number(b.id)-Number(a.id));
+    const all=[...manual,...labor];
+    const categories=[...new Set(all.map(x=>x.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'it'));
+    const rows=all.filter(x=>(!category||x.category===category)&&(!search||`${x.description||''} ${x.category||''} ${x.supplier||''} ${x.notes||''}`.toLowerCase().includes(search))).sort((a,b)=>b.expense_date.localeCompare(a.expense_date)||Number(b.id)-Number(a.id));
     let net=0,vat=0;for(const x of rows){net+=int(x.taxable_amount_cents);vat+=Math.round(int(x.taxable_amount_cents)*num(x.vat_percent)/100);}
-    return json({expenses:rows,totals:{net,vat,total:net+vat}});
+    return json({expenses:rows,categories,totals:{net,vat,total:net+vat}});
   }
   if (req.method === 'POST' && path === '/api/expenses') {
     const b=await req.json(); if(!clean(b.description))return json({error:'Descrizione obbligatoria'},400);

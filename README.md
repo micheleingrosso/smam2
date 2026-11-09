@@ -1,6 +1,16 @@
+
+## Versione 1.1.0
+
+- Scheda allievo in stile rilevazione con tutte le lavorazioni e controlli + / −.
+- Salvataggio cumulativo delle quantità mantenendo per quanto possibile lo storico delle righe.
+- Eliminazione delle lavorazioni dal Dettaglio lavorazioni.
+- Colonna “Quota soggetta a ribasso (10%)” nel Tariffario.
+- Filtri Spese per data, categoria e ricerca libera, con totali ricalcolati.
+- Nessuna migrazione D1 aggiuntiva richiesta rispetto alla v1.0.0.
+
 # SMAM2 · Gestione amministrativa sartoria MW SRL
 
-Versione 1.0.0 del gestionale amministrativo ridotto, separato dal precedente sistema di tracciabilità.
+Versione 1.1.0 del gestionale amministrativo ridotto, separato dal precedente sistema di tracciabilità.
 
 ## Infrastruttura
 
