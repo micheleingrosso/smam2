@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "smam2",
   "main": "src/index.js",
-  "compatibility_date": "2026-11-10",
+  "compatibility_date": "2026-11-09",
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
