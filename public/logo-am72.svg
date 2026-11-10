@@ -1,10 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 150" role="img" aria-label="Aeronautica Militare 72° Stormo">
-  <rect width="420" height="150" rx="18" fill="#fff"/>
-  <path d="M30 100h360" stroke="#172c4d" stroke-width="3"/>
-  <path d="M49 58c34-26 70-26 104 0M371 58c-34-26-70-26-104 0" fill="none" stroke="#c79b2b" stroke-width="5" stroke-linecap="round"/>
-  <path d="M67 64c27-17 49-16 73 0M353 64c-27-17-49-16-73 0" fill="none" stroke="#c79b2b" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="210" cy="52" r="30" fill="#172c4d"/>
-  <text x="210" y="61" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#fff">72°</text>
-  <text x="210" y="118" text-anchor="middle" font-family="Arial,sans-serif" font-size="21" font-weight="700" letter-spacing="2" fill="#172c4d">STORMO</text>
-  <text x="210" y="140" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="600" letter-spacing="1.3" fill="#56647a">AERONAUTICA MILITARE</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 320" role="img" aria-label="72° Stormo">
+  <defs>
+    <clipPath id="shield"><path d="M18 18H242V206c0 51-39 83-112 102C57 289 18 257 18 206Z"/></clipPath>
+  </defs>
+  <path d="M18 18H242V206c0 51-39 83-112 102C57 289 18 257 18 206Z" fill="#111" stroke="#d3a62d" stroke-width="10"/>
+  <g clip-path="url(#shield)">
+    <rect x="18" y="62" width="224" height="105" fill="#4da8d8"/>
+    <rect x="18" y="167" width="224" height="68" fill="#173f8f"/>
+    <rect x="18" y="235" width="224" height="73" fill="#4b9d65"/>
+    <path d="M18 167c13 12 26 12 39 0s26-12 39 0 26 12 39 0 26-12 39 0 26 12 39 0 26-12 39 0 26 12 39 0" fill="none" stroke="#d3a62d" stroke-width="6"/>
+    <path d="M40 210c48 8 66 30 92 43 34 17 71 3 93-17" fill="none" stroke="#d3a62d" stroke-width="5"/>
+    <path d="M58 111c37 6 70 31 98 66 19 24 37 38 63 47" fill="none" stroke="#d3a62d" stroke-width="5"/>
+    <path d="M66 101c43 13 78 42 104 77 16 22 31 34 48 41M75 94c46 18 80 45 105 80 14 20 26 30 38 36M84 90c44 20 75 47 99 78 12 16 21 24 31 29" fill="none" stroke="#d3a62d" stroke-width="3.6"/>
+    <path d="M88 194c18 25 32 45 67 51 24 4 47-4 64-19" fill="none" stroke="#d3a62d" stroke-width="4"/>
+    <path d="M102 188c10 18 26 31 49 34 31 5 53-11 70-28M109 178c12 14 28 23 48 24 28 2 48-11 62-24" fill="none" stroke="#d3a62d" stroke-width="3.2"/>
+    <path d="M125 245l12 7-5 14-14-2-3-14z" fill="#fff"/>
+    <path d="M126 246l7 4-3 8-8-1-2-8z" fill="#4b9d65"/>
+  </g>
+  <rect x="30" y="28" width="200" height="42" rx="2" fill="#121212" stroke="#d3a62d" stroke-width="2"/>
+  <text x="130" y="56" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" letter-spacing="1.4" fill="#e5bd44">72° STORMO</text>
+  <g fill="none" stroke="#e5bd44" stroke-width="3">
+    <path d="M56 104l5 9 9 5-9 5-5 9-5-9-9-5 9-5z"/><path d="M92 91l5 9 9 5-9 5-5 9-5-9-9-5 9-5z"/>
+    <path d="M157 101l5 9 9 5-9 5-5 9-5-9-9-5 9-5z"/><path d="M201 112l5 9 9 5-9 5-5 9-5-9-9-5 9-5z"/>
+    <path d="M181 136l4 7 7 4-7 4-4 7-4-7-7-4 7-4z"/><path d="M211 145l4 7 7 4-7 4-4 7-4-7-7-4 7-4z"/>
+  </g>
+  <text x="130" y="286" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="1.2" fill="#e5bd44">MULTUM IN PARVO</text>
 </svg>
