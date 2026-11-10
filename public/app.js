@@ -157,11 +157,43 @@ async function openEmployee(id){state.selectedEmployee=id;$$('#employeeList .lis
 }
 function employeeModal(e,after){modal(`<h2>${e?'Modifica dipendente':'Nuova dipendente'}</h2><form id="empForm" class="form-grid cols2"><label class="field"><span>Cognome</span><input name="lastName" value="${esc(e?.last_name||'')}" required></label><label class="field"><span>Nome</span><input name="firstName" value="${esc(e?.first_name||'')}" required></label>${e?`<label class="field"><span>Stato</span><select name="active"><option value="1" ${e.active?'selected':''}>Attiva</option><option value="0" ${!e.active?'selected':''}>Disattivata</option></select></label>`:''}<label class="field" style="grid-column:1/-1"><span>Note</span><textarea name="notes">${esc(e?.notes||'')}</textarea></label><div class="notice" style="grid-column:1/-1">Paga oraria fissa: <strong>€ 9,00</strong></div><div class="actions" style="grid-column:1/-1"><button class="btn primary">Salva</button><button type="button" class="btn modal-close">Annulla</button></div></form>`,()=>{$('#empForm').onsubmit=async ev=>{ev.preventDefault();const f=ev.currentTarget,b={lastName:f.lastName.value,firstName:f.firstName.value,notes:f.notes.value,active:!e||f.active.value==='1'};await api(e?`/api/employees/${e.id}`:'/api/employees',{method:e?'PUT':'POST',body:JSON.stringify(b)});closeModal();toast('Dipendente salvata');after?.()}})}
 
+
+function buildStudentDetailRows(rows){
+  const map=new Map();
+  for(const r of (rows||[])){
+    const key=`${r.student_id}__${r.tariff_id}`;
+    if(!map.has(key)) map.set(key,{
+      student_id:r.student_id,
+      name:`${r.last_name} ${r.first_name}`,
+      course:r.course,
+      garment_type:r.garment_type,
+      repair_code:r.repair_code,
+      description:r.repair_description,
+      quantity:0,
+      gross_cents:0,
+      discount_cents:0,
+      net_cents:0
+    });
+    const item=map.get(key);
+    item.quantity+=Number(r.quantity||0);
+    item.gross_cents+=Number(r.gross_cents||0);
+    item.discount_cents+=Number(r.discount_cents||0);
+    item.net_cents+=Number(r.net_cents||0);
+  }
+  return [...map.values()].sort((a,b)=>
+    a.name.localeCompare(b.name)||
+    String(a.garment_type||'').localeCompare(String(b.garment_type||''))||
+    Number(a.repair_code||0)-Number(b.repair_code||0)||
+    String(a.description||'').localeCompare(String(b.description||''))
+  );
+}
+
 async function renderReports(course=''){
   const d=await api(`/api/report?${qs({from:state.dateFrom,to:state.dateTo,course})}`);
+  const studentDetailRows=buildStudentDetailRows(d.rows);
   view.innerHTML=`<div class="panel"><div class="panel-head"><div><h2>Rendicontazione cliente</h2><div class="muted small">Report delle lavorazioni eseguite, esportabile con o senza i relativi dati economici.</div></div><div class="actions"><label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;white-space:nowrap"><input type="checkbox" id="reportIncludeEconomics" checked style="width:18px;height:18px"> Includi dati economici nel PDF</label><button class="btn primary" id="reportPdf">Esporta PDF</button><a class="btn" id="workCsv">CSV lavorazioni</a></div></div><form id="reportFilters" class="filters"><label class="field"><span>Dal</span><input name="from" type="date" value="${state.dateFrom}"></label><label class="field"><span>Al</span><input name="to" type="date" value="${state.dateTo}"></label><label class="field"><span>Corso</span><input name="course" placeholder="Tutti"></label><button class="btn primary">Aggiorna</button></form></div>
   <div class="cards">${card('Lordo tariffario',money(d.revenue.gross))}${card('Ribasso',money(d.revenue.discount))}${card('Imponibile netto',money(d.revenue.net))}</div>
-  <div class="panel"><h2>Riepilogo per allievo</h2><div style="margin-top:12px">${tableStudentReport(d.byStudent)}</div></div>
+  <div class="panel"><h2>Riepilogo per allievo</h2><div style="margin-top:12px">${tableStudentReport(studentDetailRows)}</div></div>
   <div class="panel"><h2>Riepilogo per lavorazione</h2><div style="margin-top:12px">${tableRepairReport(d.byRepair)}</div></div>`;
   function setLinks(c=''){const p=qs({from:state.dateFrom,to:state.dateTo,course:c});$('#workCsv').href=`/api/report/work.csv?${p}`};setLinks(course);$('#reportFilters').course.value=course;$('#reportPdf').onclick=()=>exportReportPdf(d,{from:state.dateFrom,to:state.dateTo,course},$('#reportIncludeEconomics').checked);$('#reportFilters').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;state.dateFrom=f.from.value;state.dateTo=f.to.value;await renderReports(f.course.value)};
 }
@@ -174,10 +206,11 @@ function exportReportPdf(d,filters,includeEconomics=true){
   const period=`${fmtDate(filters.from)} – ${fmtDate(filters.to)}`;
   const reportDate=new Date().toLocaleString('it-IT',{dateStyle:'long',timeStyle:'short'});
   const totalQty=(d.byRepair||[]).reduce((a,r)=>a+Number(r.quantity||0),0);
+  const studentDetailRows=buildStudentDetailRows(d.rows);
   const studentCount=(d.byStudent||[]).length;
-  const studentRows=d.byStudent.length?d.byStudent.map(r=>includeEconomics
-    ?`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
-    :`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?6:3}" class="empty">Nessun dato</td></tr>`;
+  const studentRows=studentDetailRows.length?studentDetailRows.map(r=>includeEconomics
+    ?`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
+    :`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?9:6}" class="empty">Nessun dato</td></tr>`;
   const repairRows=d.byRepair.length?d.byRepair.map(r=>includeEconomics
     ?`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
     :`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?7:4}" class="empty">Nessun dato</td></tr>`;
@@ -186,20 +219,20 @@ function exportReportPdf(d,filters,includeEconomics=true){
     ?`<div class="kpis"><div class="kpi"><span>Lordo tariffario</span><strong>${money(d.revenue.gross)}</strong></div><div class="kpi"><span>Ribasso</span><strong>${money(d.revenue.discount)}</strong></div><div class="kpi"><span>Imponibile netto</span><strong>${money(d.revenue.net)}</strong></div><div class="kpi"><span>IVA</span><strong>${money(d.revenue.vat)}</strong></div></div>`
     :`<div class="kpis non-econ"><div class="kpi"><span>Allievi nel report</span><strong>${studentCount}</strong></div><div class="kpi"><span>Lavorazioni totali</span><strong>${totalQty}</strong></div></div>`;
   w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Rendicontazione SMAM2 ${period}</title><style>
-    @page{size:A4 portrait;margin:13mm 12mm 15mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.header{display:grid;grid-template-columns:150px 1fr 95px;align-items:center;gap:12px;border-bottom:2px solid #172c4d;padding-bottom:8px;margin-bottom:12px}.header img{max-width:100%;max-height:70px;object-fit:contain}.header .stormo{max-height:78px}.head-center{text-align:center}.head-center h1{font-size:17px;margin:0 0 4px;letter-spacing:.03em}.head-center .sub{font-size:10.5px;font-weight:700;color:#33445a}.meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;border:1px solid #d9e0e8;background:#f7f9fb;border-radius:7px;padding:8px 9px;margin-bottom:10px}.meta b{color:#172c4d}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}.kpis.non-econ{grid-template-columns:repeat(2,1fr);max-width:420px}.kpi{border:1px solid #d9e0e8;border-radius:7px;padding:7px;background:#fff}.kpi span{display:block;color:#697789;font-size:7.3px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}.kpi strong{font-size:12px}.section{margin:0 0 12px;break-inside:auto}.section h2{font-size:12px;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #cbd5df;color:#172c4d}table{width:100%;border-collapse:collapse;table-layout:auto}thead{display:table-header-group}tr{break-inside:avoid}th{background:#172c4d;color:#fff;text-align:left;font-size:7.1px;text-transform:uppercase;letter-spacing:.035em;padding:4px 5px}td{border-bottom:1px solid #dfe5eb;padding:3.5px 5px;vertical-align:top;line-height:1.25}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.strong{font-weight:700}.empty{text-align:center;color:#758295;padding:9px}.foot{border-top:1px solid #cbd5df;margin-top:10px;padding-top:6px;display:flex;justify-content:space-between;gap:12px;color:#6d7987;font-size:7.3px}.page-break{break-before:page}
+    @page{size:A4 portrait;margin:13mm 12mm 15mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.header{display:grid;grid-template-columns:180px 1fr 110px;align-items:center;gap:12px;border-bottom:2px solid #172c4d;padding-bottom:8px;margin-bottom:12px}.header .logo{display:flex;align-items:center;justify-content:flex-start;min-height:78px}.header .logo.right{justify-content:flex-end}.header .logo img{display:block;max-width:100%;max-height:78px;width:auto;height:auto;object-fit:contain}.header .mw img{max-width:180px;max-height:74px;object-position:left center}.header .stormo img{max-width:110px;max-height:82px}.head-center{text-align:center}.head-center h1{font-size:17px;margin:0 0 4px;letter-spacing:.03em}.head-center .sub{font-size:10.5px;font-weight:700;color:#33445a}.meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;border:1px solid #d9e0e8;background:#f7f9fb;border-radius:7px;padding:8px 9px;margin-bottom:10px}.meta b{color:#172c4d}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}.kpis.non-econ{grid-template-columns:repeat(2,1fr);max-width:420px}.kpi{border:1px solid #d9e0e8;border-radius:7px;padding:7px;background:#fff}.kpi span{display:block;color:#697789;font-size:7.3px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}.kpi strong{font-size:12px}.section{margin:0 0 12px;break-inside:auto}.section h2{font-size:12px;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #cbd5df;color:#172c4d}table{width:100%;border-collapse:collapse;table-layout:auto}thead{display:table-header-group}tr{break-inside:avoid}th{background:#172c4d;color:#fff;text-align:left;font-size:7.1px;text-transform:uppercase;letter-spacing:.035em;padding:4px 5px}td{border-bottom:1px solid #dfe5eb;padding:3.5px 5px;vertical-align:top;line-height:1.25}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.strong{font-weight:700}.wrap{white-space:normal}.empty{text-align:center;color:#758295;padding:9px}.foot{border-top:1px solid #cbd5df;margin-top:10px;padding-top:6px;display:flex;justify-content:space-between;gap:12px;color:#6d7987;font-size:7.3px}.page-break{break-before:page}
     @media screen{body{max-width:820px;margin:24px auto;padding:0 20px}.screenbar{position:sticky;top:0;background:#fff;padding:10px 0;z-index:5;text-align:right}.screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}}@media print{.screenbar{display:none}}
   </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div>
-  <header class="header"><img src="/logo-mw.png" alt="Military World"><div class="head-center"><h1>${includeEconomics?'REPORT DI RENDICONTAZIONE':'REPORT LAVORAZIONI'}</h1><div class="sub">Servizio sartoria · Allievi Marescialli</div><div style="margin-top:4px;color:#637184">MW SRL · 72° Stormo</div></div><img class="stormo" src="/logo-am72.svg" alt="Stemma 72° Stormo"></header>
+  <header class="header"><div class="logo mw"><img src="/logo-mw.png" alt="Military World"></div><div class="head-center"><h1>${includeEconomics?'REPORT DI RENDICONTAZIONE':'REPORT LAVORAZIONI'}</h1><div class="sub">Servizio sartoria · Allievi Marescialli</div><div style="margin-top:4px;color:#637184">MW SRL · 72° Stormo</div></div><div class="logo right stormo"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
   <div class="meta"><div><b>Periodo:</b> ${period}</div><div><b>Corso:</b> ${course}</div>${metaEconomics}<div><b>Generato:</b> ${reportDate}</div></div>
   ${summary}
-  <section class="section"><h2>Riepilogo per allievo</h2><table><thead><tr><th>Allievo</th><th>Corso</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${studentRows}</tbody></table></section>
+  <section class="section"><h2>Riepilogo per allievo</h2><table><thead><tr><th>Allievo</th><th>Corso</th><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${studentRows}</tbody></table></section>
   <section class="section page-break"><h2>Riepilogo per lavorazione</h2><table><thead><tr><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${repairRows}</tbody></table></section>
-  <footer class="foot"><span>MW SRL · Military World · Largo Onio della Porta 17, 01100 Viterbo · P.IVA/C.F. 02475420564</span><span>SMAM2 v1.2.2 · ${includeEconomics?'Rendicontazione cliente':'Report operativo'}</span></footer>
+  <footer class="foot"><span>MW SRL · Military World · Largo Onio della Porta 17, 01100 Viterbo · P.IVA/C.F. 02475420564</span><span>SMAM2 v1.2.3 · ${includeEconomics?'Rendicontazione cliente':'Report operativo'}</span></footer>
   <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script></body></html>`);
   w.document.close();
 }
 
-function tableStudentReport(rows){return rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Allievo</th><th>Corso</th><th>Q.tà</th><th>Lordo</th><th>Ribasso</th><th>Netto</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${r.quantity}</td><td>${money(r.gross_cents)}</td><td>${money(r.discount_cents)}</td><td><b>${money(r.net_cents)}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nessun dato.</div>'}
+function tableStudentReport(rows){return rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Allievo</th><th>Corso</th><th>Capo</th><th>Cod.</th><th class="wrap">Lavorazione</th><th>Q.tà</th><th>Lordo</th><th>Ribasso</th><th>Netto</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td>${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td>${r.quantity}</td><td>${money(r.gross_cents)}</td><td>${money(r.discount_cents)}</td><td><b>${money(r.net_cents)}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nessun dato.</div>'}
 function tableRepairReport(rows){return rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Capo</th><th>Cod.</th><th>Lavorazione</th><th>Q.tà</th><th>Lordo</th><th>Ribasso</th><th>Netto</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.garment_type)}</td><td>${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td>${r.quantity}</td><td>${money(r.gross_cents)}</td><td>${money(r.discount_cents)}</td><td><b>${money(r.net_cents)}</b></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nessun dato.</div>'}
 function tableEmployeeReport(rows){return rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Dipendente</th><th>Ore</th><th>Costo maturato</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.last_name)} ${esc(r.first_name)}</b></td><td>${hours(r.minutes)}</td><td>${money(r.accrued_cents)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nessun dato.</div>'}
 
