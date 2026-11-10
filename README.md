@@ -1,5 +1,5 @@
 
-## Versione 1.2.3
+## Versione 1.2.4
 
 - Scheda allievo in stile rilevazione con tutte le lavorazioni e controlli + / −.
 - Salvataggio cumulativo delle quantità mantenendo per quanto possibile lo storico delle righe.
@@ -10,7 +10,7 @@
 
 # SMAM2 · Gestione amministrativa sartoria MW SRL
 
-Versione 1.2.3 del gestionale amministrativo ridotto, separato dal precedente sistema di tracciabilità.
+Versione 1.2.4 del gestionale amministrativo ridotto, separato dal precedente sistema di tracciabilità.
 
 ## Infrastruttura
 

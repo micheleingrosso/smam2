@@ -205,30 +205,88 @@ function exportReportPdf(d,filters,includeEconomics=true){
   const course=filters.course?esc(filters.course):'Tutti i corsi';
   const period=`${fmtDate(filters.from)} – ${fmtDate(filters.to)}`;
   const reportDate=new Date().toLocaleString('it-IT',{dateStyle:'long',timeStyle:'short'});
-  const totalQty=(d.byRepair||[]).reduce((a,r)=>a+Number(r.quantity||0),0);
   const studentDetailRows=buildStudentDetailRows(d.rows);
-  const studentCount=(d.byStudent||[]).length;
   const studentRows=studentDetailRows.length?studentDetailRows.map(r=>includeEconomics
-    ?`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
-    :`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?9:6}" class="empty">Nessun dato</td></tr>`;
+    ?`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
+    :`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?9:6}" class="empty">Nessun dato</td></tr>`;
   const repairRows=d.byRepair.length?d.byRepair.map(r=>includeEconomics
-    ?`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
-    :`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td>${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?7:4}" class="empty">Nessun dato</td></tr>`;
-  const metaEconomics=includeEconomics?`<div><b>Ribasso contrattuale:</b> ${Number(d.globalDiscountPercent).toLocaleString('it-IT',{maximumFractionDigits:4})}% sulla quota ribassabile del 10%</div>`:`<div><b>Contenuto:</b> dati economici esclusi</div>`;
-  const summary=includeEconomics
-    ?`<div class="kpis"><div class="kpi"><span>Lordo tariffario</span><strong>${money(d.revenue.gross)}</strong></div><div class="kpi"><span>Ribasso</span><strong>${money(d.revenue.discount)}</strong></div><div class="kpi"><span>Imponibile netto</span><strong>${money(d.revenue.net)}</strong></div><div class="kpi"><span>IVA</span><strong>${money(d.revenue.vat)}</strong></div></div>`
-    :`<div class="kpis non-econ"><div class="kpi"><span>Allievi nel report</span><strong>${studentCount}</strong></div><div class="kpi"><span>Lavorazioni totali</span><strong>${totalQty}</strong></div></div>`;
-  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Rendicontazione SMAM2 ${period}</title><style>
-    @page{size:A4 portrait;margin:13mm 12mm 15mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.2px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.header{display:grid;grid-template-columns:180px 1fr 110px;align-items:center;gap:12px;border-bottom:2px solid #172c4d;padding-bottom:8px;margin-bottom:12px}.header .logo{display:flex;align-items:center;justify-content:flex-start;min-height:78px}.header .logo.right{justify-content:flex-end}.header .logo img{display:block;max-width:100%;max-height:78px;width:auto;height:auto;object-fit:contain}.header .mw img{max-width:180px;max-height:74px;object-position:left center}.header .stormo img{max-width:110px;max-height:82px}.head-center{text-align:center}.head-center h1{font-size:17px;margin:0 0 4px;letter-spacing:.03em}.head-center .sub{font-size:10.5px;font-weight:700;color:#33445a}.meta{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;border:1px solid #d9e0e8;background:#f7f9fb;border-radius:7px;padding:8px 9px;margin-bottom:10px}.meta b{color:#172c4d}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}.kpis.non-econ{grid-template-columns:repeat(2,1fr);max-width:420px}.kpi{border:1px solid #d9e0e8;border-radius:7px;padding:7px;background:#fff}.kpi span{display:block;color:#697789;font-size:7.3px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}.kpi strong{font-size:12px}.section{margin:0 0 12px;break-inside:auto}.section h2{font-size:12px;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #cbd5df;color:#172c4d}table{width:100%;border-collapse:collapse;table-layout:auto}thead{display:table-header-group}tr{break-inside:avoid}th{background:#172c4d;color:#fff;text-align:left;font-size:7.1px;text-transform:uppercase;letter-spacing:.035em;padding:4px 5px}td{border-bottom:1px solid #dfe5eb;padding:3.5px 5px;vertical-align:top;line-height:1.25}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.strong{font-weight:700}.wrap{white-space:normal}.empty{text-align:center;color:#758295;padding:9px}.foot{border-top:1px solid #cbd5df;margin-top:10px;padding-top:6px;display:flex;justify-content:space-between;gap:12px;color:#6d7987;font-size:7.3px}.page-break{break-before:page}
-    @media screen{body{max-width:820px;margin:24px auto;padding:0 20px}.screenbar{position:sticky;top:0;background:#fff;padding:10px 0;z-index:5;text-align:right}.screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}}@media print{.screenbar{display:none}}
-  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div>
-  <header class="header"><div class="logo mw"><img src="/logo-mw.png" alt="Military World"></div><div class="head-center"><h1>${includeEconomics?'REPORT DI RENDICONTAZIONE':'REPORT LAVORAZIONI'}</h1><div class="sub">Servizio sartoria · Allievi Marescialli</div><div style="margin-top:4px;color:#637184">MW SRL · 72° Stormo</div></div><div class="logo right stormo"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
-  <div class="meta"><div><b>Periodo:</b> ${period}</div><div><b>Corso:</b> ${course}</div>${metaEconomics}<div><b>Generato:</b> ${reportDate}</div></div>
-  ${summary}
+    ?`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
+    :`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?7:4}" class="empty">Nessun dato</td></tr>`;
+  const totalWithVat=Number(d.revenue.net||0)+Number(d.revenue.vat||0);
+  const econSection=includeEconomics?`<section class="section"><h2>Riepilogo economico</h2><div class="summary-box"><table class="summary-table"><tbody>
+    <tr><td>Importo lordo lavorazioni</td><td class="num">${money(d.revenue.gross)}</td></tr>
+    <tr><td>Ribasso contrattuale applicato</td><td class="num">${money(d.revenue.discount)}</td></tr>
+    <tr><td>Imponibile netto</td><td class="num">${money(d.revenue.net)}</td></tr>
+    <tr><td>IVA 22%</td><td class="num">${money(d.revenue.vat)}</td></tr>
+    <tr class="total"><td>Totale complessivo</td><td class="num">${money(totalWithVat)}</td></tr>
+  </tbody></table></div></section>`:'';
+  const contentNote=includeEconomics
+    ?`<div><b>Ribasso contrattuale:</b> ${Number(d.globalDiscountPercent).toLocaleString('it-IT',{maximumFractionDigits:4})}% sulla quota ribassabile del 10%</div>`
+    :`<div><b>Contenuto:</b> report operativo senza dati economici</div>`;
+
+  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Consuntivo lavorazioni ${period}</title><style>
+    @page{size:A4 portrait;margin:13mm 12mm 16mm}
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.4px;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .screenbar{display:none}
+    .doc{max-width:100%}
+    .header{display:grid;grid-template-columns:215px 1fr 105px;align-items:center;gap:12px;border-bottom:2px solid #1d3558;padding-bottom:10px;margin-bottom:12px}
+    .logo{display:flex;align-items:center;min-height:82px}
+    .logo.left{justify-content:flex-start}
+    .logo.right{justify-content:flex-end}
+    .logo img{display:block;max-width:100%;height:auto;object-fit:contain}
+    .logo.left img{max-width:205px;max-height:92px}
+    .logo.right img{max-width:95px;max-height:102px}
+    .head-center{text-align:center}
+    .head-center h1{font-size:17px;margin:0 0 4px;letter-spacing:.04em;text-transform:uppercase}
+    .head-center .sub{font-size:10.6px;font-weight:700;color:#364760;margin:0}
+    .head-center .sub2{font-size:9px;color:#667789;margin-top:4px}
+    .refbox{border:1px solid #d5dde6;background:#f7f9fb;border-radius:8px;padding:9px 10px;margin-bottom:12px}
+    .refgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
+    .refitem b{color:#1d3558}
+    .section{margin:0 0 14px;break-inside:auto}
+    .section h2{font-size:12px;margin:0 0 6px;padding-bottom:4px;border-bottom:1px solid #c9d4df;color:#1b3152;text-transform:uppercase;letter-spacing:.04em}
+    .summary-box{border:1px solid #d8e0e8;border-radius:8px;overflow:hidden;background:#fff}
+    .summary-table{width:100%;border-collapse:collapse}
+    .summary-table td{padding:7px 9px;border-bottom:1px solid #e2e8ee}
+    .summary-table tr:last-child td{border-bottom:0}
+    .summary-table tr.total td{font-weight:800;background:#eef3f8}
+    table{width:100%;border-collapse:collapse;table-layout:auto}
+    thead{display:table-header-group}
+    tr{break-inside:avoid}
+    th{background:#1d3558;color:#fff;text-align:left;font-size:7.2px;text-transform:uppercase;letter-spacing:.04em;padding:5px 6px}
+    td{border-bottom:1px solid #dfe5eb;padding:4.2px 6px;vertical-align:top}
+    tbody tr:nth-child(even){background:#f8fafc}
+    .num{text-align:right;white-space:nowrap}
+    .strong{font-weight:700}
+    .wrap{white-space:normal}
+    .empty{text-align:center;color:#758295;padding:10px}
+    .page-break{break-before:page}
+    .signatures{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:26px}
+    .sign-box{padding-top:18px}
+    .sign-title{font-weight:700;color:#1d3558;margin-bottom:30px}
+    .sign-line{border-top:1px solid #9caabc;height:1px}
+    .foot{border-top:1px solid #cbd5df;margin-top:18px;padding-top:7px;display:flex;justify-content:space-between;gap:12px;color:#6d7987;font-size:7.6px}
+    @media screen{body{max-width:820px;margin:24px auto;padding:0 20px}.screenbar{display:block;position:sticky;top:0;background:#fff;padding:10px 0;z-index:5;text-align:right}.screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}}
+    @media print{.screenbar{display:none}}
+  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div><div class="doc">
+  <header class="header"><div class="logo left"><img src="/logo-mw.png" alt="Military World"></div><div class="head-center"><h1>Consuntivo delle lavorazioni eseguite</h1><div class="sub">Servizio di sartoria – Allievi Marescialli</div><div class="sub2">Documento di rendicontazione cliente</div></div><div class="logo right"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
+  <div class="refbox"><div class="refgrid">
+    <div class="refitem"><b>Cliente:</b> Aeronautica Militare – 72° Stormo di Viterbo</div>
+    <div class="refitem"><b>Fornitore:</b> MW SRL / Military World</div>
+    <div class="refitem"><b>Periodo:</b> ${period}</div>
+    <div class="refitem"><b>Corso:</b> ${course}</div>
+    <div class="refitem"><b>Ordinativo:</b> n. 260 del 07/10/2026</div>
+    <div class="refitem"><b>CIG:</b> BCFFD86A35</div>
+    <div class="refitem">${contentNote}</div>
+    <div class="refitem"><b>Data emissione report:</b> ${reportDate}</div>
+  </div></div>
+  ${econSection}
   <section class="section"><h2>Riepilogo per allievo</h2><table><thead><tr><th>Allievo</th><th>Corso</th><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${studentRows}</tbody></table></section>
   <section class="section page-break"><h2>Riepilogo per lavorazione</h2><table><thead><tr><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${repairRows}</tbody></table></section>
-  <footer class="foot"><span>MW SRL · Military World · Largo Onio della Porta 17, 01100 Viterbo · P.IVA/C.F. 02475420564</span><span>SMAM2 v1.2.3 · ${includeEconomics?'Rendicontazione cliente':'Report operativo'}</span></footer>
-  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script></body></html>`);
+  <section class="signatures"><div class="sign-box"><div class="sign-title">Per MW SRL</div><div class="sign-line"></div></div><div class="sign-box"><div class="sign-title">Per presa visione</div><div class="sign-line"></div></div></section>
+  <footer class="foot"><span>MW SRL · Military World · Largo Onio della Porta 17, 01100 Viterbo · P.IVA/C.F. 02475420564</span><span>Documento ad uso amministrativo</span></footer>
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script></div></body></html>`);
   w.document.close();
 }
 
