@@ -194,11 +194,48 @@ function buildStudentDetailRows(rows){
 async function renderReports(course=''){
   const d=await api(`/api/report?${qs({from:state.dateFrom,to:state.dateTo,course})}`);
   const studentDetailRows=buildStudentDetailRows(d.rows);
-  view.innerHTML=`<div class="panel"><div class="panel-head"><div><h2>Rendicontazione cliente</h2><div class="muted small">Report delle lavorazioni eseguite, esportabile con o senza i relativi dati economici.</div></div><div class="actions"><label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;white-space:nowrap"><input type="checkbox" id="reportIncludeEconomics" checked style="width:18px;height:18px"> Includi dati economici nel PDF</label><button class="btn primary" id="reportPdf">Esporta PDF</button><a class="btn" id="workCsv">CSV lavorazioni</a></div></div><form id="reportFilters" class="filters"><label class="field"><span>Dal</span><input name="from" type="date" value="${state.dateFrom}"></label><label class="field"><span>Al</span><input name="to" type="date" value="${state.dateTo}"></label><label class="field"><span>Corso</span><input name="course" placeholder="Tutti"></label><button class="btn primary">Aggiorna</button></form></div>
+  view.innerHTML=`<div class="panel"><div class="panel-head"><div><h2>Rendicontazione cliente</h2><div class="muted small">Report delle lavorazioni eseguite, esportabile con o senza i relativi dati economici.</div></div><div class="actions"><label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;white-space:nowrap"><input type="checkbox" id="reportIncludeEconomics" checked style="width:18px;height:18px"> Includi dati economici nel PDF</label><button class="btn" id="signatureSheet">Foglio firma</button><button class="btn primary" id="reportPdf">Esporta PDF</button><a class="btn" id="workCsv">CSV lavorazioni</a></div></div><form id="reportFilters" class="filters"><label class="field"><span>Dal</span><input name="from" type="date" value="${state.dateFrom}"></label><label class="field"><span>Al</span><input name="to" type="date" value="${state.dateTo}"></label><label class="field"><span>Corso</span><select name="course"><option value="">Tutti i corsi</option>${COURSE_OPTIONS.map(c=>`<option value="${c}" ${course===c?'selected':''}>${c}</option>`).join('')}</select></label><button class="btn primary">Aggiorna</button></form></div>
   <div class="cards">${card('Lordo tariffario',money(d.revenue.gross))}${card('Ribasso',money(d.revenue.discount))}${card('Imponibile netto',money(d.revenue.net))}</div>
   <div class="panel"><h2>Riepilogo per allievo</h2><div style="margin-top:12px">${tableStudentReport(studentDetailRows)}</div></div>
   <div class="panel"><h2>Riepilogo per lavorazione</h2><div style="margin-top:12px">${tableRepairReport(d.byRepair)}</div></div>`;
-  function setLinks(c=''){const p=qs({from:state.dateFrom,to:state.dateTo,course:c});$('#workCsv').href=`/api/report/work.csv?${p}`};setLinks(course);$('#reportFilters').course.value=course;$('#reportPdf').onclick=()=>exportReportPdf(d,{from:state.dateFrom,to:state.dateTo,course},$('#reportIncludeEconomics').checked);$('#reportFilters').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;state.dateFrom=f.from.value;state.dateTo=f.to.value;await renderReports(f.course.value)};
+  function setLinks(c=''){const p=qs({from:state.dateFrom,to:state.dateTo,course:c});$('#workCsv').href=`/api/report/work.csv?${p}`};setLinks(course);$('#reportFilters').course.value=course;$('#reportPdf').onclick=()=>exportReportPdf(d,{from:state.dateFrom,to:state.dateTo,course},$('#reportIncludeEconomics').checked);$('#signatureSheet').onclick=()=>exportSignatureSheet(d,{from:state.dateFrom,to:state.dateTo,course});$('#reportFilters').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;state.dateFrom=f.from.value;state.dateTo=f.to.value;await renderReports(f.course.value)};
+}
+
+function exportSignatureSheet(d,filters){
+  const w=window.open('','_blank');
+  if(!w){toast('Il browser ha bloccato la finestra del Foglio firma. Consenti i popup per SMAM2.');return}
+  const fmtDate=x=>{if(!x||x==='0000-01-01'||x==='9999-12-31')return '—';const [y,m,day]=x.split('-');return `${day}/${m}/${y}`};
+  const course=filters.course?esc(filters.course):'Tutti i corsi';
+  const period=`${fmtDate(filters.from)} – ${fmtDate(filters.to)}`;
+  const generated=new Date().toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const byStudent=new Map();
+  for(const r of (d.rows||[])){
+    const key=String(r.student_id);
+    if(!byStudent.has(key)) byStudent.set(key,{name:`${r.last_name} ${r.first_name}`,course:r.course,works:new Map()});
+    const st=byStudent.get(key);
+    const wk=`${r.tariff_id}`;
+    if(!st.works.has(wk)) st.works.set(wk,{garment:r.garment_type,code:r.repair_code,description:r.repair_description,quantity:0});
+    st.works.get(wk).quantity+=Number(r.quantity||0);
+  }
+  const students=[...byStudent.values()].sort((a,b)=>a.name.localeCompare(b.name));
+  const rows=students.length?students.map(st=>{
+    const works=[...st.works.values()].sort((a,b)=>String(a.garment||'').localeCompare(String(b.garment||''))||Number(a.code||0)-Number(b.code||0));
+    const worksHtml=works.map(x=>`<div class="work"><span class="qty">${x.quantity}×</span><span><b>${esc(x.garment)}</b> · ${esc(x.description)}</span></div>`).join('');
+    return `<tr><td class="student"><b>${esc(st.name)}</b></td><td class="course">${esc(st.course)}</td><td class="works">${worksHtml}</td><td class="signature"><div class="signline"></div></td></tr>`;
+  }).join(''):'<tr><td colspan="4" class="empty">Nessuna lavorazione nel periodo selezionato.</td></tr>';
+  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Foglio firma ${period}</title><style>
+    @page{size:A4 portrait;margin:12mm 10mm 14mm}
+    *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .screenbar{display:none}.header{display:grid;grid-template-columns:190px 1fr 90px;align-items:center;gap:12px;border-bottom:2px solid #1d3558;padding-bottom:9px;margin-bottom:10px}.logo{display:flex;align-items:center;min-height:72px}.logo.left{justify-content:flex-start}.logo.right{justify-content:flex-end}.logo img{display:block;max-width:100%;height:auto;object-fit:contain}.logo.left img{max-width:185px;max-height:82px}.logo.right img{max-width:85px;max-height:92px}.title{text-align:center}.title h1{margin:0 0 4px;font-size:17px;letter-spacing:.04em;text-transform:uppercase}.title div{font-size:10px;color:#4f6074;font-weight:700}.meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 18px;border:1px solid #d5dde6;background:#f7f9fb;border-radius:8px;padding:8px 10px;margin-bottom:10px}.meta b{color:#1d3558}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#1d3558;color:white;text-transform:uppercase;letter-spacing:.04em;font-size:7.5px;padding:6px 5px;text-align:left}td{border:1px solid #d7dfe8;padding:6px;vertical-align:middle}tr{break-inside:avoid}.student{width:22%}.course{width:8%;text-align:center}.works{width:50%}.signature{width:20%;min-height:52px}.work{display:flex;gap:5px;align-items:flex-start;margin:0 0 3px;line-height:1.25}.work:last-child{margin-bottom:0}.qty{font-weight:700;min-width:22px;text-align:right}.signline{border-bottom:1px solid #6f7f90;height:38px}.empty{text-align:center;color:#6d7987;padding:14px}.foot{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #cbd5df;margin-top:10px;padding-top:6px;color:#6d7987;font-size:7.5px}
+    @media screen{body{max-width:820px;margin:24px auto;padding:0 20px}.screenbar{display:block;position:sticky;top:0;background:#fff;padding:10px 0;z-index:5;text-align:right}.screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}}@media print{.screenbar{display:none}}
+  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div>
+    <header class="header"><div class="logo left"><img src="/logo-mw.png" alt="Military World"></div><div class="title"><h1>Foglio firma</h1><div>Servizio sartoria – Allievi Marescialli</div></div><div class="logo right"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
+    <div class="meta"><div><b>Cliente:</b> Aeronautica Militare – 72° Stormo</div><div><b>Corso:</b> ${course}</div><div><b>Periodo:</b> ${period}</div><div><b>Data emissione:</b> ${generated}</div></div>
+    <table><thead><tr><th>Allievo</th><th>Corso</th><th>Lavorazioni eseguite</th><th>Firma</th></tr></thead><tbody>${rows}</tbody></table>
+    <footer class="foot"><span>MW SRL · Military World · P.IVA/C.F. 02475420564</span><span>Firma per presa visione delle lavorazioni eseguite</span></footer>
+    <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script>
+  </body></html>`);
+  w.document.close();
 }
 
 function exportReportPdf(d,filters,includeEconomics=true){
