@@ -336,12 +336,12 @@ function exportReportPdf(d,filters,includeEconomics=true){
       const p=document.createElement('section');p.className='print-page';
       if(headId)p.appendChild(document.getElementById(headId).content.cloneNode(true));
       const sec=document.createElement('section');sec.className='section';if(title)sec.innerHTML='<h2>'+title+'</h2>';
-      const table=document.createElement('table');table.innerHTML=headHtml+'<tbody></tbody>';sec.appendChild(table);p.appendChild(sec);p.appendChild(footer());root.appendChild(p);pages.push(p);return p;
+      const table=document.createElement('table');table.className='report-data-table';table.innerHTML=headHtml+'<tbody></tbody>';sec.appendChild(table);p.appendChild(sec);p.appendChild(footer());root.appendChild(p);pages.push(p);return p;
     }
-    function fitsRow(page,row){const body=page.querySelector('tbody');body.appendChild(row);const ft=page.querySelector('.page-footer').getBoundingClientRect().top;const b=row.getBoundingClientRect().bottom;if(b>ft-10){row.remove();return false}return true}
+    function fitsRow(page,row){const body=page.querySelector('.report-data-table tbody');body.appendChild(row);const ft=page.querySelector('.page-footer').getBoundingClientRect().top;const b=row.getBoundingClientRect().bottom;if(b>ft-10){row.remove();return false}return true}
     function addRows(rows,firstPage,continueHead,title,headHtml){
       let page=firstPage;
-      if(!rows.length){page.querySelector('tbody').innerHTML='<tr><td colspan="20" class="empty">Nessun dato</td></tr>';return page}
+      if(!rows.length){page.querySelector('.report-data-table tbody').innerHTML='<tr><td colspan="20" class="empty">Nessun dato</td></tr>';return page}
       for(const original of rows){let row=original.cloneNode(true);if(!fitsRow(page,row)){page=newPage(continueHead,'',headHtml);row=original.cloneNode(true);fitsRow(page,row)}}return page;
     }
     function blockFits(page,node){page.insertBefore(node,page.querySelector('.page-footer'));const ft=page.querySelector('.page-footer').getBoundingClientRect().top;const b=node.getBoundingClientRect().bottom;if(b>ft-10){node.remove();return false}return true}
@@ -351,7 +351,7 @@ function exportReportPdf(d,filters,includeEconomics=true){
       let repairPage=newPage('repair-head','',${JSON.stringify(repairHead)});
       repairPage=addRows(repairRows,repairPage,'repair-cont','',${JSON.stringify(repairHead)});
       let sig=document.getElementById('signatures').content.cloneNode(true).firstElementChild;
-      if(!blockFits(repairPage,sig)){const p=newPage('repair-cont','',${JSON.stringify(repairHead)});p.querySelector('table').remove();sig=document.getElementById('signatures').content.cloneNode(true).firstElementChild;blockFits(p,sig)}
+      if(!blockFits(repairPage,sig)){const p=newPage('repair-cont','',${JSON.stringify(repairHead)});p.querySelector('.report-data-table')?.remove();sig=document.getElementById('signatures').content.cloneNode(true).firstElementChild;blockFits(p,sig)}
       pages.forEach((p,i)=>p.querySelector('.page-num').textContent='Pagina '+(i+1)+' di '+pages.length);
       document.getElementById('student-source').remove();document.getElementById('repair-source').remove();
       setTimeout(()=>window.print(),180);
