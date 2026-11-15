@@ -201,6 +201,35 @@ async function renderReports(course=''){
   function setLinks(c=''){const p=qs({from:state.dateFrom,to:state.dateTo,course:c});$('#workCsv').href=`/api/report/work.csv?${p}`};setLinks(course);$('#reportFilters').course.value=course;$('#reportPdf').onclick=()=>exportReportPdf(d,{from:state.dateFrom,to:state.dateTo,course},$('#reportIncludeEconomics').checked);$('#signatureSheet').onclick=()=>exportSignatureSheet(d,{from:state.dateFrom,to:state.dateTo,course});$('#reportFilters').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;state.dateFrom=f.from.value;state.dateTo=f.to.value;await renderReports(f.course.value)};
 }
 
+function chunkByWeight(items,limit,weightFn){
+  const chunks=[];let current=[],weight=0;
+  for(const item of items){
+    const w=Math.max(1,Number(weightFn(item)||1));
+    if(current.length&&weight+w>limit){chunks.push(current);current=[];weight=0}
+    current.push(item);weight+=w;
+  }
+  if(current.length)chunks.push(current);
+  return chunks;
+}
+function reportFooterHtml(page,total,rightText){
+  return `<footer class="page-footer"><span>MW SRL · Military World · Largo Onio della Porta 17, 01100 Viterbo · P.IVA/C.F. 02475420564</span><span>${esc(rightText)} · Pagina ${page} di ${total}</span></footer>`;
+}
+function signatureFooterHtml(page,total){
+  return `<footer class="page-footer"><span>MW SRL · Military World · P.IVA/C.F. 02475420564</span><span>Firma per presa visione · Pagina ${page} di ${total}</span></footer>`;
+}
+function pagedPrintCss(){return `
+  @page{size:A4 portrait;margin:0}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#eef1f4}
+  body{font-family:Arial,Helvetica,sans-serif;color:#17212b;font-size:9.4px;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .screenbar{position:sticky;top:0;z-index:20;text-align:right;padding:10px 16px;background:#fff;border-bottom:1px solid #dbe3eb}
+  .screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}
+  .print-page{width:210mm;height:297mm;margin:10mm auto;background:#fff;position:relative;padding:12mm 10mm 19mm;overflow:hidden;box-shadow:0 4px 22px #0002;page-break-after:always}
+  .print-page:last-child{page-break-after:auto}
+  .page-footer{position:absolute;left:10mm;right:10mm;bottom:7mm;border-top:1px solid #cbd5df;padding-top:5px;display:flex;justify-content:space-between;gap:12px;color:#6d7987;font-size:7.2px;white-space:nowrap}
+  @media print{html,body{background:#fff}.screenbar{display:none}.print-page{margin:0;box-shadow:none}.print-page:last-child{page-break-after:auto}}
+`;}
+
 function exportSignatureSheet(d,filters){
   const w=window.open('','_blank');
   if(!w){toast('Il browser ha bloccato la finestra del Foglio firma. Consenti i popup per SMAM2.');return}
@@ -212,29 +241,38 @@ function exportSignatureSheet(d,filters){
   for(const r of (d.rows||[])){
     const key=String(r.student_id);
     if(!byStudent.has(key)) byStudent.set(key,{name:`${r.last_name} ${r.first_name}`,course:r.course,works:new Map()});
-    const st=byStudent.get(key);
-    const wk=`${r.tariff_id}`;
+    const st=byStudent.get(key),wk=`${r.tariff_id}`;
     if(!st.works.has(wk)) st.works.set(wk,{garment:r.garment_type,code:r.repair_code,description:r.repair_description,quantity:0});
     st.works.get(wk).quantity+=Number(r.quantity||0);
   }
-  const students=[...byStudent.values()].sort((a,b)=>a.name.localeCompare(b.name));
-  const rows=students.length?students.map(st=>{
-    const works=[...st.works.values()].sort((a,b)=>String(a.garment||'').localeCompare(String(b.garment||''))||Number(a.code||0)-Number(b.code||0));
-    const worksHtml=works.map(x=>`<div class="work"><span class="qty">${x.quantity}×</span><span><b>${esc(x.garment)}</b> · ${esc(x.description)}</span></div>`).join('');
+  const students=[...byStudent.values()].sort((a,b)=>a.name.localeCompare(b.name)).map(st=>({
+    ...st,
+    workList:[...st.works.values()].sort((a,b)=>String(a.garment||'').localeCompare(String(b.garment||''))||Number(a.code||0)-Number(b.code||0))
+  }));
+  const firstCap=19, nextCap=26;
+  const weight=st=>Math.max(2,1+st.workList.reduce((n,x)=>n+(String(x.description||'').length>58?2:1),0));
+  const pages=[];
+  let remaining=[...students];
+  if(remaining.length){
+    let cur=[],used=0;
+    while(remaining.length){const st=remaining[0],sw=weight(st);if(cur.length&&used+sw>firstCap)break;cur.push(remaining.shift());used+=sw}
+    pages.push({first:true,students:cur});
+    const rest=chunkByWeight(remaining,nextCap,weight);for(const ch of rest)pages.push({first:false,students:ch});
+  }else pages.push({first:true,students:[]});
+  const total=pages.length;
+  const tableRows=list=>list.length?list.map(st=>{
+    const worksHtml=st.workList.map(x=>`<div class="work"><span class="qty">${x.quantity}×</span><span><b>${esc(x.garment)}</b> · ${esc(x.description)}</span></div>`).join('');
     return `<tr><td class="student"><b>${esc(st.name)}</b></td><td class="course">${esc(st.course)}</td><td class="works">${worksHtml}</td><td class="signature"><div class="signline"></div></td></tr>`;
   }).join(''):'<tr><td colspan="4" class="empty">Nessuna lavorazione nel periodo selezionato.</td></tr>';
-  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Foglio firma ${period}</title><style>
-    @page{size:A4 portrait;margin:12mm 10mm 14mm}
-    *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.5px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .screenbar{display:none}.header{display:grid;grid-template-columns:190px 1fr 90px;align-items:center;gap:12px;border-bottom:2px solid #1d3558;padding-bottom:9px;margin-bottom:10px}.logo{display:flex;align-items:center;min-height:72px}.logo.left{justify-content:flex-start}.logo.right{justify-content:flex-end}.logo img{display:block;max-width:100%;height:auto;object-fit:contain}.logo.left img{max-width:185px;max-height:82px}.logo.right img{max-width:85px;max-height:92px}.title{text-align:center}.title h1{margin:0 0 4px;font-size:17px;letter-spacing:.04em;text-transform:uppercase}.title div{font-size:10px;color:#4f6074;font-weight:700}.meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 18px;border:1px solid #d5dde6;background:#f7f9fb;border-radius:8px;padding:8px 10px;margin-bottom:10px}.meta b{color:#1d3558}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#1d3558;color:white;text-transform:uppercase;letter-spacing:.04em;font-size:7.5px;padding:6px 5px;text-align:left}td{border:1px solid #d7dfe8;padding:6px;vertical-align:middle}tr{break-inside:avoid}.student{width:22%}.course{width:8%;text-align:center}.works{width:50%}.signature{width:20%;min-height:52px}.work{display:flex;gap:5px;align-items:flex-start;margin:0 0 3px;line-height:1.25}.work:last-child{margin-bottom:0}.qty{font-weight:700;min-width:22px;text-align:right}.signline{border-bottom:1px solid #6f7f90;height:38px}.empty{text-align:center;color:#6d7987;padding:14px}.foot{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #cbd5df;margin-top:10px;padding-top:6px;color:#6d7987;font-size:7.5px}
-    @media screen{body{max-width:820px;margin:24px auto;padding:0 20px}.screenbar{display:block;position:sticky;top:0;background:#fff;padding:10px 0;z-index:5;text-align:right}.screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}}@media print{.screenbar{display:none}}
-  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div>
-    <header class="header"><div class="logo left"><img src="/logo-mw.png" alt="Military World"></div><div class="title"><h1>Foglio firma</h1><div>Servizio sartoria – Allievi Marescialli</div></div><div class="logo right"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
-    <div class="meta"><div><b>Cliente:</b> Aeronautica Militare – 72° Stormo</div><div><b>Corso:</b> ${course}</div><div><b>Periodo:</b> ${period}</div><div><b>Data emissione:</b> ${generated}</div></div>
-    <table><thead><tr><th>Allievo</th><th>Corso</th><th>Lavorazioni eseguite</th><th>Firma</th></tr></thead><tbody>${rows}</tbody></table>
-    <footer class="foot"><span>MW SRL · Military World · P.IVA/C.F. 02475420564</span><span>Firma per presa visione delle lavorazioni eseguite</span></footer>
-    <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script>
-  </body></html>`);
+  const pageHtml=pages.map((pg,i)=>`<section class="print-page">
+    ${pg.first?`<header class="header"><div class="logo left"><img src="/logo-mw.png" alt="Military World"></div><div class="title"><h1>Foglio firma</h1><div>Servizio sartoria – Allievi Marescialli</div></div><div class="logo right"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
+    <div class="meta"><div><b>Cliente:</b> Aeronautica Militare – 72° Stormo</div><div><b>Corso:</b> ${course}</div><div><b>Periodo:</b> ${period}</div><div><b>Data emissione:</b> ${generated}</div></div>`:`<div class="continuation"><b>Foglio firma</b><span>Servizio sartoria – Allievi Marescialli · ${period} · ${course}</span></div>`}
+    <table><thead><tr><th>Allievo</th><th>Corso</th><th>Lavorazioni eseguite</th><th>Firma</th></tr></thead><tbody>${tableRows(pg.students)}</tbody></table>
+    ${signatureFooterHtml(i+1,total)}
+  </section>`).join('');
+  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Foglio firma ${period}</title><style>${pagedPrintCss()}
+    .header{display:grid;grid-template-columns:190px 1fr 90px;align-items:center;gap:12px;border-bottom:2px solid #1d3558;padding-bottom:9px;margin-bottom:10px}.logo{display:flex;align-items:center;min-height:72px}.logo.left{justify-content:flex-start}.logo.right{justify-content:flex-end}.logo img{display:block;max-width:100%;height:auto;object-fit:contain}.logo.left img{max-width:185px;max-height:82px}.logo.right img{max-width:85px;max-height:92px}.title{text-align:center}.title h1{margin:0 0 4px;font-size:17px;letter-spacing:.04em;text-transform:uppercase}.title div{font-size:10px;color:#4f6074;font-weight:700}.meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 18px;border:1px solid #d5dde6;background:#f7f9fb;border-radius:8px;padding:8px 10px;margin-bottom:10px}.meta b{color:#1d3558}.continuation{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;border-bottom:2px solid #1d3558;padding-bottom:7px;margin-bottom:9px;color:#1d3558}.continuation b{font-size:13px;text-transform:uppercase}.continuation span{font-size:8px;color:#617184}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#1d3558;color:#fff;text-transform:uppercase;letter-spacing:.04em;font-size:7.5px;padding:6px 5px;text-align:left}td{border:1px solid #d7dfe8;padding:6px;vertical-align:middle}tr{break-inside:avoid}.student{width:22%}.course{width:8%;text-align:center}.works{width:50%}.signature{width:20%;min-height:52px}.work{display:flex;gap:5px;align-items:flex-start;margin:0 0 3px;line-height:1.25}.work:last-child{margin-bottom:0}.qty{font-weight:700;min-width:22px;text-align:right}.signline{border-bottom:1px solid #6f7f90;height:38px}.empty{text-align:center;color:#6d7987;padding:14px}
+  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div>${pageHtml}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),500));<\/script></body></html>`);
   w.document.close();
 }
 
@@ -246,87 +284,54 @@ function exportReportPdf(d,filters,includeEconomics=true){
   const period=`${fmtDate(filters.from)} – ${fmtDate(filters.to)}`;
   const reportDate=new Date().toLocaleString('it-IT',{dateStyle:'long',timeStyle:'short'});
   const studentDetailRows=buildStudentDetailRows(d.rows);
-  const studentRows=studentDetailRows.length?studentDetailRows.map(r=>includeEconomics
-    ?`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
-    :`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?9:6}" class="empty">Nessun dato</td></tr>`;
-  const repairRows=d.byRepair.length?d.byRepair.map(r=>includeEconomics
-    ?`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
-    :`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`).join(''):`<tr><td colspan="${includeEconomics?7:4}" class="empty">Nessun dato</td></tr>`;
   const totalWithVat=Number(d.revenue.net||0)+Number(d.revenue.vat||0);
-  const econSection=includeEconomics?`<section class="section"><h2>Riepilogo economico</h2><div class="summary-box"><table class="summary-table"><tbody>
-    <tr><td>Importo lordo lavorazioni</td><td class="num">${money(d.revenue.gross)}</td></tr>
-    <tr><td>Ribasso contrattuale applicato</td><td class="num">${money(d.revenue.discount)}</td></tr>
-    <tr><td>Imponibile netto</td><td class="num">${money(d.revenue.net)}</td></tr>
-    <tr><td>IVA 22%</td><td class="num">${money(d.revenue.vat)}</td></tr>
-    <tr class="total"><td>Totale complessivo</td><td class="num">${money(totalWithVat)}</td></tr>
-  </tbody></table></div></section>`:'';
   const contentNote=includeEconomics
     ?`<div><b>Ribasso contrattuale:</b> ${Number(d.globalDiscountPercent).toLocaleString('it-IT',{maximumFractionDigits:4})}% sulla quota ribassabile del 10%</div>`
     :`<div><b>Contenuto:</b> report operativo senza dati economici</div>`;
-
-  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Consuntivo lavorazioni ${period}</title><style>
-    @page{size:A4 portrait;margin:13mm 12mm 16mm}
-    *{box-sizing:border-box}
-    body{font-family:Arial,Helvetica,sans-serif;color:#17212b;margin:0;font-size:9.4px;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .screenbar{display:none}
-    .doc{max-width:100%}
-    .header{display:grid;grid-template-columns:215px 1fr 105px;align-items:center;gap:12px;border-bottom:2px solid #1d3558;padding-bottom:10px;margin-bottom:12px}
-    .logo{display:flex;align-items:center;min-height:82px}
-    .logo.left{justify-content:flex-start}
-    .logo.right{justify-content:flex-end}
-    .logo img{display:block;max-width:100%;height:auto;object-fit:contain}
-    .logo.left img{max-width:205px;max-height:92px}
-    .logo.right img{max-width:95px;max-height:102px}
-    .head-center{text-align:center}
-    .head-center h1{font-size:17px;margin:0 0 4px;letter-spacing:.04em;text-transform:uppercase}
-    .head-center .sub{font-size:10.6px;font-weight:700;color:#364760;margin:0}
-    .head-center .sub2{font-size:9px;color:#667789;margin-top:4px}
-    .refbox{border:1px solid #d5dde6;background:#f7f9fb;border-radius:8px;padding:9px 10px;margin-bottom:12px}
-    .refgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
-    .refitem b{color:#1d3558}
-    .section{margin:0 0 14px;break-inside:auto}
-    .section h2{font-size:12px;margin:0 0 6px;padding-bottom:4px;border-bottom:1px solid #c9d4df;color:#1b3152;text-transform:uppercase;letter-spacing:.04em}
-    .summary-box{border:1px solid #d8e0e8;border-radius:8px;overflow:hidden;background:#fff}
-    .summary-table{width:100%;border-collapse:collapse}
-    .summary-table td{padding:7px 9px;border-bottom:1px solid #e2e8ee}
-    .summary-table tr:last-child td{border-bottom:0}
-    .summary-table tr.total td{font-weight:800;background:#eef3f8}
-    table{width:100%;border-collapse:collapse;table-layout:auto}
-    thead{display:table-header-group}
-    tr{break-inside:avoid}
-    th{background:#1d3558;color:#fff;text-align:left;font-size:7.2px;text-transform:uppercase;letter-spacing:.04em;padding:5px 6px}
-    td{border-bottom:1px solid #dfe5eb;padding:4.2px 6px;vertical-align:top}
-    tbody tr:nth-child(even){background:#f8fafc}
-    .num{text-align:right;white-space:nowrap}
-    .strong{font-weight:700}
-    .wrap{white-space:normal}
-    .empty{text-align:center;color:#758295;padding:10px}
-    .page-break{break-before:page}
-    .signatures{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:26px}
-    .sign-box{padding-top:18px}
-    .sign-title{font-weight:700;color:#1d3558;margin-bottom:30px}
-    .sign-line{border-top:1px solid #9caabc;height:1px}
-    .foot{border-top:1px solid #cbd5df;margin-top:18px;padding-top:7px;display:flex;justify-content:space-between;gap:12px;color:#6d7987;font-size:7.6px}
-    @media screen{body{max-width:820px;margin:24px auto;padding:0 20px}.screenbar{display:block;position:sticky;top:0;background:#fff;padding:10px 0;z-index:5;text-align:right}.screenbar button{border:0;border-radius:8px;padding:9px 14px;background:#17212b;color:#fff;font-weight:700;cursor:pointer}}
-    @media print{.screenbar{display:none}}
-  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div><div class="doc">
-  <header class="header"><div class="logo left"><img src="/logo-mw.png" alt="Military World"></div><div class="head-center"><h1>Consuntivo delle lavorazioni eseguite</h1><div class="sub">Servizio di sartoria – Allievi Marescialli</div><div class="sub2">Documento di rendicontazione cliente</div></div><div class="logo right"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
-  <div class="refbox"><div class="refgrid">
-    <div class="refitem"><b>Cliente:</b> Aeronautica Militare – 72° Stormo di Viterbo</div>
-    <div class="refitem"><b>Fornitore:</b> MW SRL / Military World</div>
-    <div class="refitem"><b>Periodo:</b> ${period}</div>
-    <div class="refitem"><b>Corso:</b> ${course}</div>
-    <div class="refitem"><b>Ordinativo:</b> n. 260 del 07/10/2026</div>
-    <div class="refitem"><b>CIG:</b> BCFFD86A35</div>
-    <div class="refitem">${contentNote}</div>
-    <div class="refitem"><b>Data emissione report:</b> ${reportDate}</div>
-  </div></div>
-  ${econSection}
-  <section class="section"><h2>Riepilogo per allievo</h2><table><thead><tr><th>Allievo</th><th>Corso</th><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${studentRows}</tbody></table></section>
-  <section class="section page-break"><h2>Riepilogo per lavorazione</h2><table><thead><tr><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead><tbody>${repairRows}</tbody></table></section>
-  <section class="signatures"><div class="sign-box"><div class="sign-title">Per MW SRL</div><div class="sign-line"></div></div><div class="sign-box"><div class="sign-title">Per presa visione</div><div class="sign-line"></div></div></section>
-  <footer class="foot"><span>MW SRL · Military World · Largo Onio della Porta 17, 01100 Viterbo · P.IVA/C.F. 02475420564</span><span>Documento ad uso amministrativo</span></footer>
-  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script></div></body></html>`);
+  const econSection=includeEconomics?`<section class="section"><h2>Riepilogo economico</h2><div class="summary-box"><table class="summary-table"><tbody>
+    <tr><td>Importo lordo lavorazioni</td><td class="num">${money(d.revenue.gross)}</td></tr><tr><td>Ribasso contrattuale applicato</td><td class="num">${money(d.revenue.discount)}</td></tr><tr><td>Imponibile netto</td><td class="num">${money(d.revenue.net)}</td></tr><tr><td>IVA 22%</td><td class="num">${money(d.revenue.vat)}</td></tr><tr class="total"><td>Totale complessivo</td><td class="num">${money(totalWithVat)}</td></tr>
+  </tbody></table></div></section>`:'';
+  const studentRows=studentDetailRows.map(r=>({html:includeEconomics
+    ?`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
+    :`<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.course)}</td><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`,weight:String(r.description||'').length>62?2:1}));
+  const repairRows=(d.byRepair||[]).map(r=>({html:includeEconomics
+    ?`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td><td class="num">${money(r.gross_cents)}</td><td class="num">${money(r.discount_cents)}</td><td class="num strong">${money(r.net_cents)}</td></tr>`
+    :`<tr><td>${esc(r.garment_type)}</td><td class="num">${r.repair_code}</td><td class="wrap">${esc(r.description)}</td><td class="num">${r.quantity}</td></tr>`,weight:String(r.description||'').length>70?2:1}));
+  const studentFirst=[],studentRest=[...studentRows];let used=0;const firstCap=includeEconomics?13:15;
+  while(studentRest.length){const r=studentRest[0];if(studentFirst.length&&used+r.weight>firstCap)break;studentFirst.push(studentRest.shift());used+=r.weight}
+  const studentChunks=chunkByWeight(studentRest,includeEconomics?21:24,x=>x.weight);
+  const repairChunks=chunkByWeight(repairRows,includeEconomics?20:23,x=>x.weight);
+  if(repairChunks.length){
+    const sigCap=includeEconomics?13:16,lastChunk=repairChunks[repairChunks.length-1];
+    const lastWeight=lastChunk.reduce((n,x)=>n+x.weight,0);
+    if(lastWeight>sigCap){
+      const tail=[];let tw=0;
+      while(lastChunk.length){const x=lastChunk[lastChunk.length-1];if(tail.length&&tw+x.weight>sigCap)break;tail.unshift(lastChunk.pop());tw+=x.weight;if(tw>=sigCap)break}
+      if(lastChunk.length)repairChunks.push(tail);else repairChunks[repairChunks.length-1]=tail;
+    }
+  }
+  const pages=[];
+  pages.push({kind:'first',rows:studentFirst});
+  for(const ch of studentChunks)pages.push({kind:'students',rows:ch});
+  if(repairChunks.length){for(const ch of repairChunks)pages.push({kind:'repairs',rows:ch})}
+  else if(!pages.length)pages.push({kind:'repairs',rows:[]});
+  const last=pages[pages.length-1];last.signatures=true;
+  const total=pages.length;
+  const studentHead=`<thead><tr><th>Allievo</th><th>Corso</th><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead>`;
+  const repairHead=`<thead><tr><th>Capo</th><th class="num">Cod.</th><th>Lavorazione</th><th class="num">Q.tà</th>${includeEconomics?'<th class="num">Lordo</th><th class="num">Ribasso</th><th class="num">Netto</th>':''}</tr></thead>`;
+  const renderRows=(rows,cols)=>rows.length?rows.map(x=>x.html).join(''):`<tr><td colspan="${cols}" class="empty">Nessun dato</td></tr>`;
+  const pageHtml=pages.map((pg,i)=>{
+    let body='';
+    if(pg.kind==='first')body=`<header class="header"><div class="logo left"><img src="/logo-mw.png" alt="Military World"></div><div class="head-center"><h1>Consuntivo delle lavorazioni eseguite</h1><div class="sub">Servizio di sartoria – Allievi Marescialli</div><div class="sub2">Documento di rendicontazione cliente</div></div><div class="logo right"><img src="/logo-am72.png" alt="Stemma 72° Stormo"></div></header>
+      <div class="refbox"><div class="refgrid"><div class="refitem"><b>Cliente:</b> Aeronautica Militare – 72° Stormo di Viterbo</div><div class="refitem"><b>Fornitore:</b> MW SRL / Military World</div><div class="refitem"><b>Periodo:</b> ${period}</div><div class="refitem"><b>Corso:</b> ${course}</div><div class="refitem"><b>Ordinativo:</b> n. 260 del 07/10/2026</div><div class="refitem"><b>CIG:</b> BCFFD86A35</div><div class="refitem">${contentNote}</div><div class="refitem"><b>Data emissione report:</b> ${reportDate}</div></div></div>${econSection}<section class="section"><h2>Riepilogo per allievo</h2><table>${studentHead}<tbody>${renderRows(pg.rows,includeEconomics?9:6)}</tbody></table></section>`;
+    if(pg.kind==='students')body=`<div class="continuation"><b>Riepilogo per allievo – segue</b><span>${period} · ${course}</span></div><section class="section"><table>${studentHead}<tbody>${renderRows(pg.rows,includeEconomics?9:6)}</tbody></table></section>`;
+    if(pg.kind==='repairs')body=`<div class="continuation"><b>Riepilogo per lavorazione${i===0?'':' – segue'}</b><span>${period} · ${course}</span></div><section class="section"><table>${repairHead}<tbody>${renderRows(pg.rows,includeEconomics?7:4)}</tbody></table></section>`;
+    if(pg.signatures)body+=`<section class="signatures"><div class="sign-box"><div class="sign-title">Per MW SRL</div><div class="sign-line"></div></div><div class="sign-box"><div class="sign-title">Per presa visione</div><div class="sign-line"></div></div></section>`;
+    return `<section class="print-page">${body}${reportFooterHtml(i+1,total,'Documento ad uso amministrativo')}</section>`;
+  }).join('');
+  w.document.write(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Consuntivo lavorazioni ${period}</title><style>${pagedPrintCss()}
+    .header{display:grid;grid-template-columns:215px 1fr 105px;align-items:center;gap:12px;border-bottom:2px solid #1d3558;padding-bottom:10px;margin-bottom:12px}.logo{display:flex;align-items:center;min-height:82px}.logo.left{justify-content:flex-start}.logo.right{justify-content:flex-end}.logo img{display:block;max-width:100%;height:auto;object-fit:contain}.logo.left img{max-width:205px;max-height:92px}.logo.right img{max-width:95px;max-height:102px}.head-center{text-align:center}.head-center h1{font-size:17px;margin:0 0 4px;letter-spacing:.04em;text-transform:uppercase}.head-center .sub{font-size:10.6px;font-weight:700;color:#364760}.head-center .sub2{font-size:9px;color:#667789;margin-top:4px}.refbox{border:1px solid #d5dde6;background:#f7f9fb;border-radius:8px;padding:9px 10px;margin-bottom:12px}.refgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}.refitem b{color:#1d3558}.section{margin:0 0 12px}.section h2{font-size:12px;margin:0 0 6px;padding-bottom:4px;border-bottom:1px solid #c9d4df;color:#1b3152;text-transform:uppercase;letter-spacing:.04em}.summary-box{border:1px solid #d8e0e8;border-radius:8px;overflow:hidden;background:#fff}.summary-table{width:100%;border-collapse:collapse}.summary-table td{padding:7px 9px;border-bottom:1px solid #e2e8ee}.summary-table tr:last-child td{border-bottom:0}.summary-table tr.total td{font-weight:800;background:#eef3f8}.continuation{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;border-bottom:2px solid #1d3558;padding-bottom:7px;margin-bottom:9px;color:#1d3558}.continuation b{font-size:12px;text-transform:uppercase}.continuation span{font-size:8px;color:#617184}table{width:100%;border-collapse:collapse;table-layout:auto}thead{display:table-header-group}tr{break-inside:avoid}th{background:#1d3558;color:#fff;text-align:left;font-size:7.2px;text-transform:uppercase;letter-spacing:.04em;padding:5px 6px}td{border-bottom:1px solid #dfe5eb;padding:4.2px 6px;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.num{text-align:right;white-space:nowrap}.strong{font-weight:700}.wrap{white-space:normal}.empty{text-align:center;color:#758295;padding:10px}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:20px}.sign-box{padding-top:12px}.sign-title{font-weight:700;color:#1d3558;margin-bottom:28px}.sign-line{border-top:1px solid #9caabc;height:1px}
+  </style></head><body><div class="screenbar"><button onclick="window.print()">Salva / stampa PDF</button></div>${pageHtml}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),500));<\/script></body></html>`);
   w.document.close();
 }
 
